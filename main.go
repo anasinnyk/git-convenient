@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"github.com/spf13/cobra"
 	"github.com/manifoldco/promptui"
 	log "github.com/sirupsen/logrus"
@@ -159,8 +160,40 @@ func (a *App) Commit() {
 		footer = a.prompt("Enter your footer part", "")
 	}
 
-	fmt.Sprintf("%s(%s): %s\n\n%s\n\n%s", typeName, scopes, msg, body, footer)
-	//TODO: commit here
+	commit := fmt.Sprintf("%s: %s", typeName, msg)
+	if scopes != "" {
+		commit = fmt.Sprintf("%s(%s): %s", typeName, scopes, msg)
+	}
+
+	if body != "" {
+		commit = fmt.Sprintf("%s\n\n%s", commit, body)
+	}
+	if footer != "" {
+		commit = fmt.Sprintf("%s\n\n%s", commit, footer)
+	}
+
+	if a.validate(commit) {
+		r, err := git.PlainOpen(".")
+		if err != nil {
+			log.Fatalf("Cannot repository open %v", err)
+		}
+		wt, err := r.Worktree()
+		if err != nil {
+			log.Fatalf("Cannot get worktree %v", err)
+		}
+		hash, err := wt.Commit(commit, &git.CommitOptions{
+			Author: &object.Signature{
+				Name: a.Config.User.Name,
+				Email: a.Config.User.Email,
+			},
+		})
+		if err != nil {
+			log.Fatalf("Cannot commited %v", err)
+		}
+		fmt.Println(hash)
+	} else {
+		fmt.Println("Commit is not valid")
+	}
 }
 
 func (a *App) validate(commit string) bool {
