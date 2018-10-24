@@ -1,43 +1,49 @@
 package main
 
 import (
+	"os"
 	"fmt"
 	"regexp"
 	"strings"
 	"os/exec"
 
-	// "gopkg.in/src-d/go-git.v4"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"github.com/spf13/cobra"
 	"github.com/manifoldco/promptui"
 	log "github.com/sirupsen/logrus"
+)
+
+var (
+	version  string
+	revision string
 )
 
 type OptionalPart struct {
 	Skip bool
 }
 
-type Pattern struct {
-	Match string
-	Replace string
-}
-
-type Scope struct {
-	OptionalPart
-	Pattern Pattern
-}
-
 type Commit struct {
-	Scope Scope
+	ValidatePattern string `git:"validate-pattern"`
+	Scope struct {
+		OptionalPart
+		Pattern string
+		Replace string
+	}
 	Body OptionalPart
 	Footer OptionalPart
 }
 
 type Config struct {
-	Commit Commit
+	Commit Commit `git:"conventional-commit"`
+	User struct {
+		Email string
+		Name  string
+	}
 }
 
 type App struct {
-	Config Config
+	Config *Config
 }
 
 type CommitType struct {
@@ -45,9 +51,7 @@ type CommitType struct {
 	Description string
 }
 
-type Scopes []string
-
-func (a *App) SelectCommitType() CommitType {
+func (a *App) SelectCommitType() string	 {
 	types := []CommitType{
 		{Value: "feat",        Description: "A new feature"},
 		{Value: "fix",         Description: "A bug fix"},
@@ -68,11 +72,11 @@ func (a *App) SelectCommitType() CommitType {
 		Label:    "{{ . }}?",
 		Active:   `{{ "\u27A1" | yellow }} {{ .Value | cyan }}: {{ .Description | yellow }}`,
 		Inactive: "  {{ .Value | cyan }}: {{ .Description | yellow }}",
-		Selected: `{{ "\u2714" | green }} {{ .Value | cyan | bold }}`,
+		Selected: `{{ "\u2714" | green }} {{ "Select Commit Type" | cyan | bold }} {{ .Value }}`,
 	}
 
 	promptType := promptui.Select{
-		Label:     "Commit Type",
+		Label:     "Select Commit Type",
 		Items:     types,
 		Templates: templatesType,
 		Size:      len(types),
@@ -80,52 +84,181 @@ func (a *App) SelectCommitType() CommitType {
 
 	i, _, err := promptType.Run()
 	if err != nil {
-		log.Panic("Incorrect commit type\nDetails: %v\n", err)
+		log.Panicf("Incorrect commit type\nDetails: %v\n", err)
 	}
-	return types[i]
+	return types[i].Value
 }
 
-func (a *App) DetectScope() Scopes {
-    
+func (a *App) DetectScope() []string {
+	diff, err := exec.Command("git", "diff", "--staged", "--name-status").Output()
+	if err != nil {
+		log.Printf("Git diff %v\n", err)
+		return nil
+	}
+	
+	var scopes []string
+	re, err := regexp.Compile(a.Config.Commit.Scope.Pattern)
+	if err != nil {
+		log.Error(err)
+	}
+
+	files := strings.Split(strings.Trim(string(diff), "\n"), "\n")
+	for _, f := range files {
+		f = strings.Trim(f, " ")
+		if re.MatchString(f) {
+			scopes = append(scopes, re.ReplaceAllString(f, "$1"))
+		}
+	}
+
+	func (xs *[]string) {
+		found := make(map[string]bool)
+		j := 0
+		for i, x := range *xs {
+			if !found[x] {
+				found[x] = true
+				(*xs)[j] = (*xs)[i]
+				j++
+			}
+		}
+		*xs = (*xs)[:j]
+	}(&scopes)
+
+	return scopes
+}
+
+func (a *App) prompt(label string, def string) string {
+	prompt := promptui.Prompt{
+		Label:     label,
+		Default:   def,
+		Templates: &promptui.PromptTemplates{
+			Prompt:  "{{ . }} ",
+			Success: "{{ \"\u2714\" | green }} {{ . | cyan | bold }} ",
+		},
+	}
+
+	msg, _ := prompt.Run()
+	return msg
+}
+
+func (a *App) Commit() {
+	typeName := a.SelectCommitType()
+	var scopes string
+	if !a.Config.Commit.Scope.Skip {
+		dScopes := a.DetectScope()
+		scopes = a.prompt("Enter your scope without breket or press enter for apply this", strings.Join(dScopes, ","))
+	}
+	msg := a.prompt("Enter your comment", "")
+	
+	var body string
+	if !a.Config.Commit.Body.Skip {
+		body = a.prompt("Enter your body part", "")
+	}
+
+	var footer string
+	if !a.Config.Commit.Body.Skip {
+		footer = a.prompt("Enter your footer part", "")
+	}
+
+	fmt.Sprintf("%s(%s): %s\n\n%s\n\n%s", typeName, scopes, msg, body, footer)
+	//TODO: commit here
+}
+
+func (a *App) validate(commit string) bool {
+	if a.Config.Commit.ValidatePattern == "" {
+		a.Config.Commit.ValidatePattern = "^(feat|fix|breaking|chore|ci|docs|build|pref|refactor|revert|style|test|improvement)(\\([\\S]+\\))?: ([^\n]+(\n[\\s\\S]+)$|.*$)"
+	}
+	validator := regexp.MustCompile(a.Config.Commit.ValidatePattern)
+	return validator.MatchString(commit)
+}
+
+func (a *App) CheckIfCommitValid(hash string) bool {
+	r, err := git.PlainOpen(".")
+	if err != nil {
+		log.Fatalf("Cannot repository open %v", err)
+	}
+	obj, err := r.CommitObject(plumbing.NewHash(hash))
+	if err != nil {
+		log.Fatalf("Cannto find commit %s. %v", hash, err)
+	}
+	return a.validate(obj.Message)
+}
+
+func (a *App) CheckIfMsgValid(msg string) bool {
+	return a.validate(msg)
+}
+
+func (a *App) InstallHook() {
+	hook := "MSG=`cat .git/COMMIT_EDITMSG`\ngit convenient validate -m \"$MSG\""
+
+	f, err := os.OpenFile(".git/hooks/commit-msg", os.O_RDWR|os.O_CREATE, 0755)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if _, err = f.WriteString(hook); err != nil {
+		log.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func main() {
-	
+	var conf Config
+	g := GitConfig{}
+	g.ParseFile(&conf)
 
+	app := &App{
+		Config: &conf,
+	}
 
-	// diff, err := exec.Command("git", "diff", "--staged", "--name-status").Output()
-	// if err != nil {
-	// 	fmt.Printf("Git diff %v\n", err)
-	// 	return
-	// }
-	// var scopes []string
-	// re := regexp.MustCompile("^.*\\.([\\S]{2,3})$") // TODO: move it to config
+	commit := &cobra.Command{
+		Use:   "commit",
+		Short: "Create git commit in convenient style",
+		Run: func(cmd *cobra.Command, args []string) {
+		    app.Commit()
+		},
+	}
 
-	// files := strings.Split(strings.Trim(string(diff), "\n"), "\n")
-	// for _, f := range files {
-	// 	f = strings.Trim(f, " ")
-	// 	if re.MatchString(f) {
-	// 		scopes = append(scopes, re.ReplaceAllString(f, "$1")) // TODO: move it to config
-	// 	}
-	// }
-	// templatesMessage := &promptui.PromptTemplates{
-	// 	Prompt:  "{{ . }}: ",
-	// 	Valid:   "{{ . }}: ",
-	// 	Invalid: "{{ . }}: ",
-	// 	Success: `{{ "\u2714" | green | bold }} `,
-	// }
-	// promptMessage := promptui.Prompt{
-	// 	Label:     "Commit Message",
-	// 	Templates: templatesMessage,
-	// }
-	// msg, _ := promptMessage.Run()
+	var hash string
+	var msg string
+	validate := &cobra.Command{
+		Use:   "validate",
+		Short: "Check commit message if it's valid",
+		Run: func(cmd *cobra.Command, args []string) {
+			var cValid = true
+			var mValid = true
+			if hash != "" {
+				cValid = app.CheckIfCommitValid(hash)
+			}
 
-	// // TODO: IS THIS SCOPE CORRECT ?
-	// // TODO: PROMPT FOR BODY AND FOOTER=
-	// // TODO: JIRA CONNECTOR
-	// if len(scopes) != 0 {
-	// 	fmt.Printf("%s(%s): %s", types[i].Value, strings.Join(scopes, ","), msg)
-	// } else {
-	// 	fmt.Printf("%s: %s", types[i].Value, msg)
-	// }
+			if msg != "" {
+				mValid = app.CheckIfMsgValid(msg)
+			}
+
+			if (cValid && mValid) {
+				fmt.Println("It's valid")
+			} else {
+				fmt.Println("Commit is not valid")
+				os.Exit(1)
+			}
+		},
+	}
+	validate.Flags().StringVarP(&hash, "commit", "c", "", "hash commit which need validate")
+	validate.Flags().StringVarP(&msg, "message", "m", "", "message which need validate")
+
+	installHook := &cobra.Command{
+		Use:   "install-hook",
+		Short: "Install commit validation hook to your project",
+		Run: func(cmd *cobra.Command, args []string) {
+		  app.InstallHook()
+		},
+	}
+
+	var rootCmd = &cobra.Command{
+		Use: "git-convenient",
+		Version: fmt.Sprintf("%s (%s)", version, revision),
+	}
+	rootCmd.AddCommand(commit, validate, installHook)
+	rootCmd.Execute()
+
 }
