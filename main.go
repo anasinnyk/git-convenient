@@ -36,7 +36,7 @@ type Commit struct {
 }
 
 type Config struct {
-	Commit Commit `git:"conventional-commit"`
+	Commit Commit `git:"convenient"`
 	User struct {
 		Email string
 		Name  string
