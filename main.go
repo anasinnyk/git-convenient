@@ -198,7 +198,7 @@ func (a *App) Commit() {
 
 func (a *App) validate(commit string) bool {
 	if a.Config.Commit.ValidatePattern == "" {
-		a.Config.Commit.ValidatePattern = "^(feat|fix|breaking|chore|ci|docs|build|pref|refactor|revert|style|test|improvement)(\\([\\S]+\\))?: ([^\n]+(\n[\\s\\S]+)$|.*$)"
+		a.Config.Commit.ValidatePattern = "^(feat|fix|breaking|chore|ci|docs|build|pref|refactor|revert|style|test|improvement)(\\([a-zA-Z0-9_\\-,]+\\))?: ([^\n]+(\n[\\s\\S]+)$|.*$)"
 	}
 	validator := regexp.MustCompile(a.Config.Commit.ValidatePattern)
 	return validator.MatchString(commit)
