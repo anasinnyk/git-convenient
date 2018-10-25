@@ -145,7 +145,10 @@ func (a *App) Commit() {
 	typeName := a.SelectCommitType()
 	var scopes string
 	if !a.Config.Commit.Scope.Skip {
-		dScopes := a.DetectScope()
+		var dScopes []string
+		if a.Config.Commit.Scope.Pattern != "" && a.Config.Commit.Scope.Replace != "" {
+			dScopes = a.DetectScope()
+		}
 		scopes = a.prompt("Enter your scope without breket or press enter for apply this", strings.Join(dScopes, ","))
 	}
 	msg := a.prompt("Enter your comment", "")
