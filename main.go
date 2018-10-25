@@ -107,7 +107,7 @@ func (a *App) DetectScope() []string {
 	for _, f := range files {
 		f = strings.Trim(f, " ")
 		if re.MatchString(f) {
-			scopes = append(scopes, re.ReplaceAllString(f, "$1"))
+			scopes = append(scopes, re.ReplaceAllString(f, a.Config.Commit.Scope.Replace))
 		}
 	}
 

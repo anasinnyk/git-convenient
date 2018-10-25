@@ -1,0 +1,37 @@
+language: go
+sudo: false
+matrix:
+  include:
+    - go: 1.x
+      env: GO111MODULE=on
+before_script:
+  - wget https://github.com/clog-tool/clog-cli/releases/download/v0.9.3/clog-v0.9.3-x86_64-unknown-linux-gnu.tar.gz
+  - tar zxf clog-v0.9.3-x86_64-unknown-linux-gnu.tar.gz
+  - pwd
+  - export PATH=$PATH:$PWD
+  - go get github.com/mitchellh/gox
+  - go get github.com/Clever/gitsem
+  - git checkout -- go.mod go.sum
+
+script:
+  - clog --patch
+  - current_cl=`cat CHANGELOG.md`
+  - export BODY=`cat CHANGELOG.tmp`
+  - echo "$BODY\\n;$current_cl" > CHANGELOG.md
+  - git add CHANGELOG.md
+  - git commit -m"chore":" update changelog [skip ci]"  
+  - git remote add torigin https://$GITHUB_OAUTH_TOKEN@github.com/anasinnyk/git-convenient.git
+  - gitsem -m "chore":" update to version %s [skip ci]" patch || true
+  - git push torigin HEAD:$TRAVIS_BRANCH
+  - git push torigin v`cat VERSION`
+  - gox -os="linux darwin windows" -arch="amd64" -output="git-convenient.{{.OS}}.{{.Arch}}" -ldflags "-X main.revision=`git rev-parse --short HEAD` -X main.version=`cat VERSION`" -verbose ./...
+
+deploy:
+  provider: releases
+  api_key: $GITHUB_OAUTH_TOKEN
+  file_glob: true
+  file: git-convenient.*
+  skip_cleanup: true
+  #body: "${BODY}"
+  on:
+    tag: /^v/
