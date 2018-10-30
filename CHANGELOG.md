@@ -12,7 +12,9 @@
 
 #### Bug Fixes
 
-*   bug with empty scope patthern and replace ([7cdba41d](7cdba41d))\n;<a name="v1.0.0"></a>
+*   bug with empty scope patthern and replace ([7cdba41d](7cdba41d))\n;
+
+<a name="v1.0.0"></a>
 ### v1.0.0 (2018-10-29)
 
 
