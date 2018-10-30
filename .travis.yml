@@ -17,7 +17,7 @@ script:
   - clog --patch
   - current_cl=`cat CHANGELOG.md`
   - export BODY=`cat CHANGELOG.tmp`
-  - echo "$BODY\\n;$current_cl" > CHANGELOG.md
+  - echo "$BODY\n;$current_cl" > CHANGELOG.md
   - git add CHANGELOG.md
   - git commit -m"chore":" update changelog [skip ci]"  
   - git remote add torigin https://$GITHUB_OAUTH_TOKEN@github.com/anasinnyk/git-convenient.git
