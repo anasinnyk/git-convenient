@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/anasinnyk/git-convenient.svg?branch=master)](https://travis-ci.org/anasinnyk/git-convenient)[![GitHub release](https://img.shields.io/github/release/anasinnyk/git-convenient.svg)](https://GitHub.com/anasinnyk/git-convenient/releases/)
+
+
 # Commit Conventional Tool
 
 ## Install
